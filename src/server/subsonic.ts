@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { URL } from 'url'
 import { getUserSpace, getUserDirname } from '@/user'
 import { callUserApiGetMusicUrl } from '@/server/userApi'
+import { listServers } from '@/server/openlist'
 import { getSingerPic, getSingerDetail, getSingerMid } from '@/server/utils/singer'
 import { fetchRecommendedAlbums } from '@/server/utils/recommendAlbums'
 import { fetchGenres, fetchRadios, fetchPlaylistsByGenre, fetchRadioSongs, fetchPlaylistSongs, fetchSongsByGenre } from '@/server/utils/discovery'
@@ -1976,11 +1977,11 @@ class SubsonicHandler {
 
         try {
             const maxBitrate = parseInt(params.get('maxBitrate') || '0')
-            let quality = '128k'
+            let qualities: string[] = ['128k']
             if (maxBitrate === 0 || maxBitrate >= 320) {
-                quality = 'flac' // 优先请求最高音质，SDK 会自动降级
+                qualities = ['flac', '320k', '128k'] // 优先最高音质，失败自动降级
             } else if (maxBitrate > 128) {
-                quality = '320k'
+                qualities = ['320k', '128k']
             }
 
             // [新增] 处理电台流: 随机取一首歌播放
@@ -1997,7 +1998,7 @@ class SubsonicHandler {
                     // console.log(`[Subsonic] Radio ${id} picked song: ${s.name || s.songname} (${songmid})`)
 
                     const musicInfo: any = { source: 'tx', songmid, id: `tx_${songmid}`, meta: { songId: songmid } }
-                    const result = await callUserApiGetMusicUrl('tx', musicInfo, quality, username)
+                    const result = await callUserApiGetMusicUrl('tx', musicInfo, qualities[0], username)
 
                     if (result && result.url) {
                         // console.log(`[Subsonic] Radio ${id} resolved URL: ${result.url.slice(0, 50)}...`)
@@ -2042,16 +2043,27 @@ class SubsonicHandler {
                 }
             }
 
-            // [新增] openlist 本地音乐: 不依赖自定义音源脚本, 直接重定向到 lxserver 自身的流代理端点
+            // [新增] openlist 本地音乐: 无条件直接走 lxserver 自身的流代理端点, 不关联任何自定义音源脚本
             if (source === 'openlist' || musicInfo.openlist || musicInfo.source === 'openlist') {
-                const serverId = musicInfo.serverId
-                const filePath = musicInfo.path || musicInfo.filename
-                let base = ''
                 const u = musicInfo.url || ''
+                let base = ''
                 if (u.startsWith('/api/openlist/stream')) {
                     base = u
-                } else if (serverId && filePath) {
-                    base = `/api/openlist/stream?server=${encodeURIComponent(serverId)}&path=${encodeURIComponent(filePath)}${musicInfo.sign ? `&sign=${encodeURIComponent(musicInfo.sign)}` : ''}`
+                } else {
+                    let serverId = musicInfo.serverId
+                    let filePath = musicInfo.path || musicInfo.filename
+                    if (!filePath) {
+                        const decoded = decodeURIComponent(songmid)
+                        if (decoded.startsWith('/')) filePath = decoded
+                    }
+                    if (!serverId) {
+                        const servers = listServers()
+                        if (servers.length > 0) serverId = servers[0].id
+                    }
+                    if (serverId && filePath) {
+                        const sign = musicInfo.sign
+                        base = `/api/openlist/stream?server=${encodeURIComponent(serverId)}&path=${encodeURIComponent(filePath)}${sign ? `&sign=${encodeURIComponent(sign)}` : ''}`
+                    }
                 }
                 if (base) {
                     const proto = (req.headers['x-forwarded-proto'] as string) || 'http'
@@ -2060,15 +2072,28 @@ class SubsonicHandler {
                     res.writeHead(302, { Location: location })
                     return res.end()
                 }
+                return this.sendError(res, 0, '无法解析 openlist 本地音乐播放链接: 缺少服务器或路径信息', format)
             }
 
-            const result = await callUserApiGetMusicUrl(source as any, musicInfo as any, quality, username)
+            // 按质量降级尝试解析播放链接（flac 无会员时链接常为 404，需回退到有损音质）
+            let result: any = null
+            let lastErr: any = null
+            for (const q of qualities) {
+                try {
+                    result = await callUserApiGetMusicUrl(source as any, musicInfo as any, q, username)
+                    if (result && result.url) break
+                    result = null
+                } catch (err: any) {
+                    lastErr = err
+                    result = null
+                }
+            }
 
             if (result && result.url) {
                 res.writeHead(302, { Location: result.url })
                 res.end()
             } else {
-                return this.sendError(res, 0, 'Could not resolve music URL', format)
+                return this.sendError(res, 0, lastErr?.message || 'Could not resolve music URL', format)
             }
         } catch (err: any) {
             return this.sendError(res, 0, err.message || 'Stream error', format)
