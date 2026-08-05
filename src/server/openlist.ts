@@ -585,8 +585,20 @@ export const uploadFromUrl = async (server: OpenListServer, sourceUrl: string, f
 export const testConnection = async (id: string): Promise<{ ok: boolean; message: string }> => {
   const server = getServer(id)
   if (!server) return { ok: false, message: '服务器不存在' }
+  let loginFailed = ''
   try {
-    const token = await ensureToken(server)
+    let token = server.token
+    if (!token) {
+      const cached = tokenCache[server.id]
+      if (cached && cached.token && cached.expireAt > now()) token = cached.token
+    }
+    if (!token && server.username && server.password) {
+      try {
+        token = await login(server)
+      } catch (e: any) {
+        loginFailed = (e as any).message || '登录失败'
+      }
+    }
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = token
     const res = await request(server, 'POST', '/api/fs/list', {
@@ -597,8 +609,14 @@ export const testConnection = async (id: string): Promise<{ ok: boolean; message
       refresh: false,
     }, headers)
     const content: any[] = (res && res.content) || []
-    return { ok: true, message: `连接成功，共 ${res && res.total !== undefined ? res.total : content.length} 项` }
+    const count = res && res.total !== undefined ? res.total : content.length
+    if (loginFailed) {
+      return { ok: true, message: `连接成功（游客），共 ${count} 项；账号登录失败: ${loginFailed}` }
+    }
+    return { ok: true, message: `连接成功，共 ${count} 项` }
   } catch (e: any) {
-    return { ok: false, message: e.message || '连接失败' }
+    const msg = e.message || '连接失败'
+    if (loginFailed) return { ok: false, message: `${msg}（账号登录失败: ${loginFailed}）` }
+    return { ok: false, message: msg }
   }
 }
