@@ -2042,6 +2042,26 @@ class SubsonicHandler {
                 }
             }
 
+            // [新增] openlist 本地音乐: 不依赖自定义音源脚本, 直接重定向到 lxserver 自身的流代理端点
+            if (source === 'openlist' || musicInfo.openlist || musicInfo.source === 'openlist') {
+                const serverId = musicInfo.serverId
+                const filePath = musicInfo.path || musicInfo.filename
+                let base = ''
+                const u = musicInfo.url || ''
+                if (u.startsWith('/api/openlist/stream')) {
+                    base = u
+                } else if (serverId && filePath) {
+                    base = `/api/openlist/stream?server=${encodeURIComponent(serverId)}&path=${encodeURIComponent(filePath)}${musicInfo.sign ? `&sign=${encodeURIComponent(musicInfo.sign)}` : ''}`
+                }
+                if (base) {
+                    const proto = (req.headers['x-forwarded-proto'] as string) || 'http'
+                    const host = req.headers.host || ''
+                    const location = host ? `${proto}://${host}${base}` : base
+                    res.writeHead(302, { Location: location })
+                    return res.end()
+                }
+            }
+
             const result = await callUserApiGetMusicUrl(source as any, musicInfo as any, quality, username)
 
             if (result && result.url) {
