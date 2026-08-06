@@ -5,7 +5,7 @@
 <div align="center">
   <p>
     <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build Status">
-    <img src="https://img.shields.io/badge/version-v2.0.0-blue?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-v2.1.0-blue?style=flat-square" alt="Version">
     <img src="https://img.shields.io/badge/node-%3E%3D16-green?style=flat-square" alt="Node Version">
     <img src="https://img.shields.io/github/license/boy6656598/lxserver?style=flat-square" alt="License">
     <br>
@@ -23,7 +23,7 @@
 
 ---
 
-本项目内置了一个功能强大的 **Web 播放器**，让你可以随时随地在浏览器中享受音乐。同时，它也是一个增强版的 [LX Music 数据同步服务端](md/lxserver.md)。
+本项目内置了一个功能强大的 **Web 播放器**，让你可以随时随地在浏览器中享受音乐。同时，它也是一个增强版的 [LX Music 数据同步服务端](md/lxserver.md)，支持 **Subsonic 协议**（音流、Feishin 等客户端可连接播放）、**OpenList / Alist 本地音乐库**，并可通过 Docker / 桌面客户端 / Release 等多种方式一键部署。
 
 ## ✨ Web 播放器核心特性
 
@@ -110,6 +110,8 @@
 
 全面适配 Subsonic 协议，支持使用各类 Subsonic 客户端（如音流、Feishin 等）连接并播放本站资源。支持在 Subsonic 客户端中通过 `wy:`, `kg:`, `tx:`, `kw:`, `mg:` 等指定平台前缀，或 `online:` / `local:` 强制指定全网在线或本地搜索。
 
+本地音乐（OpenList / Alist）可直接通过 Subsonic 客户端播放，无需额外配置音源脚本，播放时自动经由 lxserver 流代理转发。
+
 <p align="center">
   <img src="md/subsonic.png" width="400" alt="Subsonic 支持">
   <img src="md/subsonic-search.png" width="400" alt="Subsonic 在线全网搜索">
@@ -155,7 +157,7 @@ Web 播放器针对移动端进行了深度优化，手机浏览器访问也能�
 
 ### 方式一：NAS / Docker Compose 一键部署（推荐）
 
-适用于飞牛 NAS、群晖 NAS、及任何支持 Docker 的主机。项目内置了 `Dockerfile` 与 `docker-compose.yml`，可直接构建运行。
+适用于飞牛 NAS、群晖 NAS、及任何支持 Docker 的主机。项目内置 `docker-compose.yml`，默认直接拉取已发布到 ghcr.io 的官方镜像启动，也可按需切换为源码构建。
 
 **已有数据迁移（可选）**：如果你已有运行中的数据（用户、OpenList、卡密、云盘配置、缓存），先执行迁移脚本生成部署包：
 
@@ -172,8 +174,9 @@ mkdir -p /vol1/docker/lxserver
 #    （若迁移，把上面的部署包也解压进来）
 tar -xzf lxserver-nas-deploy.tar.gz -C /vol1/docker/lxserver
 
-# 2. 构建并启动（首次构建需编译 TS，约 5-15 分钟）
-cd /vol1/docker/lxserver && docker compose up -d --build
+# 2. 启动（默认使用 ghcr.io 官方镜像，无需本地构建）
+#    （如需从源码自行构建，注释掉 compose 中 image 行并启用 build: .，首次构建需编译 TS，约 5-15 分钟）
+cd /vol1/docker/lxserver && docker compose up -d
 
 # 3. 访问
 #    同步管理后台:  http://<NAS-IP>:9527/
@@ -210,7 +213,7 @@ npm start
 
 ### 方式四：使用 Docker 镜像
 
-> 镜像发布在 **GitHub Container Registry**（Docker Hub 发布见下方说明）：
+> 镜像发布在 **GitHub Container Registry**（ghcr.io）：
 
 ```bash
 docker run -d \
@@ -224,7 +227,7 @@ docker run -d \
   ghcr.io/boy6656598/lxserver:latest
 ```
 
-**从源码构建镜像（如需自定义或自行发布 Docker Hub）：**
+**从源码构建镜像（如需自定义或自行发布到其他仓库）：**
 
 ```bash
 docker build -t lxserver .

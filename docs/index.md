@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "LX Sync Server"
   text: "云端同步与播放的完美结合"
-  tagline: "一个支持各大音乐平台搜索、在线播放以及数据云端同步的服务系统"
+  tagline: "一个支持各大音乐平台搜索、在线播放、本地音乐库以及数据云端同步的服务系统"
   image:
     src: /icon.svg
     alt: LX Sync Server
@@ -27,6 +27,8 @@ features:
     details: 通过 Docker 或简单命令行即可部署，并自持 WebDAV 增量云备份。
   - title: 全平台桌面支持
     details: 提供针对 Win/Mac/Linux 的桌面客户端，支持系统托盘常驻、自动避让端口及便携模式运行。
+  - title: Subsonic 协议与本地音乐
+    details: 兼容音流、Feishin 等 Subsonic 客户端，支持 OpenList / Alist 本地音乐库直接播放与全网在线搜索。
 
 ---
 
