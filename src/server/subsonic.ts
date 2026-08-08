@@ -5,6 +5,8 @@ import { getUserSpace, getUserDirname } from '@/user'
 import { callUserApiGetMusicUrl } from '@/server/userApi'
 import * as webdavMount from '@/server/webdavMount'
 import * as openlist from '@/server/openlist'
+import { proxyLocalStream } from '@/server/localStreamProxy'
+import * as fileCache from '@/server/fileCache'
 import { getSingerPic, getSingerDetail, getSingerMid } from '@/server/utils/singer'
 import { fetchRecommendedAlbums } from '@/server/utils/recommendAlbums'
 import { fetchGenres, fetchRadios, fetchPlaylistsByGenre, fetchRadioSongs, fetchPlaylistSongs, fetchSongsByGenre } from '@/server/utils/discovery'
@@ -553,12 +555,22 @@ class SubsonicHandler {
     }
 
     /**
-     * 解析本地挂载歌曲的内部流 URL（webdav/openlist/local）
+     * 服务端代理本地挂载歌曲（webdav/openlist/local）的音频流。
      * - webdav_ 前缀: songmid 为 encodeURIComponent 后的远程路径，从 webdav 挂载索引匹配
      * - openlist_ 前缀: songmid 同理，从 openlist 服务器索引匹配
-     * - local: 本地缓存文件直接由 /api/music/cache/file 服务
+     * - local: 直接服务本地缓存文件
+     * 直接在 Subsonic 请求上下文中代理（已通过 Subsonic 认证），
+     * 不依赖内部流端点的 Player Session cookie / 前端认证 header。
+     * 返回是否已处理（true 表示已写入响应头）。
      */
-    private async resolveLocalStreamUrl(username: string, source: string, songmid: string, id: string): Promise<string | null> {
+    private async serveLocalStream(
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        username: string,
+        source: string,
+        songmid: string,
+        id: string,
+    ): Promise<boolean> {
         const serverPath = songmid.replace(/\+/g, ' ')
 
         if (source === 'webdav') {
@@ -571,10 +583,22 @@ class SubsonicHandler {
             const items = await webdavMount.getAllLocalIndex()
             const hit = items.find((it: any) => it.id === id || it.songmid === songmid || it.path === filePath || it.filename === filePath)
             if (hit && hit.serverId) {
-                const p = encodeURIComponent(hit.path || filePath)
-                return `/api/webdav-mounts/stream?server=${encodeURIComponent(hit.serverId)}&path=${p}`
+                const mount = webdavMount.getMount(hit.serverId)
+                const p = hit.path || filePath
+                if (mount && p) {
+                    await proxyLocalStream(req, res, {
+                        cacheFilePath: webdavMount.getCacheFilePath(mount, p),
+                        filePath: p,
+                        stream: (range?: string) => Promise.resolve(webdavMount.stream(mount, p, range)),
+                        trackProgress: (total, received) => webdavMount.trackCacheProgress(mount.id, p, total, received),
+                        markCacheDone: () => webdavMount.markCacheDone(mount.id, p),
+                        clearCacheProgress: () => webdavMount.clearCacheProgress(mount.id, p),
+                        logTag: `[Subsonic/WebDAV] ${p}`,
+                    })
+                    return true
+                }
             }
-            return null
+            return false
         }
 
         if (source === 'openlist') {
@@ -587,15 +611,25 @@ class SubsonicHandler {
             const items = await openlist.getAllLocalIndex()
             const hit = items.find((it: any) => it.id === id || it.songmid === songmid || it.path === filePath || it.filename === filePath)
             if (hit && hit.serverId) {
-                const p = encodeURIComponent(hit.path || filePath)
-                let url = `/api/openlist/stream?server=${encodeURIComponent(hit.serverId)}&path=${p}`
-                if (hit.sign) url += `&sign=${encodeURIComponent(hit.sign)}`
-                return url
+                const server = openlist.getServer(hit.serverId)
+                const p = hit.path || filePath
+                if (server && p) {
+                    await proxyLocalStream(req, res, {
+                        cacheFilePath: openlist.getCacheFilePath(server, p),
+                        filePath: p,
+                        stream: (range?: string) => openlist.stream(server, p, hit.sign || undefined, range),
+                        trackProgress: (total, received) => openlist.trackCacheProgress(server.id, p, total, received),
+                        markCacheDone: () => openlist.markCacheDone(server.id, p),
+                        clearCacheProgress: () => openlist.clearCacheProgress(server.id, p),
+                        logTag: `[Subsonic/OpenList] ${p}`,
+                    })
+                    return true
+                }
             }
-            return null
+            return false
         }
 
-        // local: 优先走内部缓存文件服务
+        // local: 直接服务本地缓存文件
         try {
             const userDir = getUserDirname(username)
             const fileName = songmid.split('/').pop() || ''
@@ -604,12 +638,16 @@ class SubsonicHandler {
                 const files = fs.readdirSync(cacheRoot)
                 const matched = files.find((f: string) => f === fileName || f.startsWith(fileName))
                 if (matched) {
-                    return `/api/music/cache/file/${encodeURIComponent(username)}/${encodeURIComponent(matched)}`
+                    const fullPath = path.join(cacheRoot, matched)
+                    if (fs.existsSync(fullPath)) {
+                        fileCache.serveCacheFile(req, res, matched, username)
+                        return true
+                    }
                 }
             }
         } catch (e) { }
 
-        return null
+        return false
     }
 
     // ─────────────────────────────────────────────
@@ -2036,16 +2074,14 @@ class SubsonicHandler {
             songmid = id
         }
 
-        // [本地挂载] webdav_/openlist_/local 走内部流 302，由内部流路由统一负责「缓存优先 + 边播边写」
+        // [本地挂载] webdav_/openlist_/local 直接服务端代理音频流（已通过 Subsonic 认证），
+        // 不 302 到内部流端点，避免手机客户端无 Player Session cookie 而 401
         if (source === 'webdav' || source === 'openlist' || source === 'local') {
             try {
-                const internalUrl = await this.resolveLocalStreamUrl(username, source, songmid, id)
-                if (internalUrl) {
-                    res.writeHead(302, { Location: internalUrl })
-                    return res.end()
-                }
+                const handled = await this.serveLocalStream(req, res, username, source, songmid, id)
+                if (handled) return
             } catch (e: any) {
-                console.error(`[Subsonic] resolve local stream failed: ${id}`, e?.message || e)
+                console.error(`[Subsonic] serve local stream failed: ${id}`, e?.message || e)
             }
             return this.sendError(res, 0, 'Could not resolve local track', format)
         }
