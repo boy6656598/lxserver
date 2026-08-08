@@ -66,3 +66,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - `stream` 返回同步 ClientRequest，server.ts 路由用 try/catch 包裹而非 `.then()`（误用 `.then` 会 TS2339）。
   - 服务启动时 config.js 的 webdav.* 备份 restore 会阻塞监听（当前环境 host.docker.internal 不可达，需等网络超时约 2-3 分钟才完成启动）；冒烟测试前先 curl 首页确认 200。
   - 构建/推送镜像：`docker build -t lxserver:webdav . && docker tag ... ghcr.io/boy6656598/lxserver:latest && docker push`；容器内产物路径为 `/server/server/server/*.js`（根目录是 `/server` 非 `/app`）。
+
+[Project Knowledge Summary]
+- Date: 2026-08-07
+- Context: Discovered by Agent while fixing 手机 Subsonic 客户端无法播放 webdav/openlist 挂载歌曲
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Subsonic 客户端（音流/箭头音乐）只通过 URL 参数 `u/t/s` 认证，跟随 302 时**不携带** cookie/header。因此 `subsonic.handleStream` 对 webdav_/openlist_/local 歌曲 302 到 `/api/webdav-mounts/stream`、`/api/openlist/stream`、`/api/music/cache/file` 会因缺 `x-frontend-auth`/`x-user-token`/`lx_player_session` 返回 401，手机端播放失败。
+  - 正确做法：Subsonic 请求已通过 `verifyAuth`，应在同一请求上下文内**服务端代理**音频流，而非 302。实现为 `subsonic.serveLocalStream`（直接写回）+ 共享代理 `src/server/localStreamProxy.ts` 的 `proxyLocalStream`（缓存优先、上游流式、跟随 3xx 最多 5 跳、边播边写 .tmp->rename、MIME 兜底、客户端断开清理）。
+  - Subsonic stream 认证测试：`t=md5(<password>+<salt>)`，`s=<salt>`；未认证返回 HTTP 200 + `<error code="40">`（Subsonic 协议用 200 承载错误，勿误判）；Range 请求应返回 206。
+  - 类型检查命令：`npx tsc --noEmit --skipLibCheck`；构建产物 `server/`；`public/js/config.js` 的 buildHash 会在 `npm run build` 时更新，非改动内容勿提交（需 `git checkout -- public/js/config.js` 还原）。
