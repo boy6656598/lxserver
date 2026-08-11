@@ -70,4 +70,4 @@
     - npm run build 通过；本地启动验证注册/有效期/活跃记录/播放端拦截/Subsonic 校验
 
   - [x] 5.3 构建推送镜像 3.0.2 并提交推送 fork 分支
-    - 代码与单测提交并推送至 fork 分支 `260811-feat-public-user-access-telegram-bot`（镜像推送由用户确认后另行执行）
+    - 代码与单测提交并推送至 fork 分支 `260811-feat-public-user-access-telegram-bot`；Docker 镜像 `ghcr.io/boy6656598/lxserver:3.0.2` 已构建并推送至 ghcr.io
