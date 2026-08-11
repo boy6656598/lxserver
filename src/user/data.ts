@@ -53,6 +53,12 @@ export const getUserConfig = (userName: string): Required<LX.User> => {
     maxSnapshotNum: global.lx.config.maxSnapshotNum,
     'list.addMusicLocationType': global.lx.config['list.addMusicLocationType'],
     ...user,
+    expireAt: user.expireAt ?? null,
+    banned: !!user.banned,
+    lastActiveAt: user.lastActiveAt ?? 0,
+    activeSeconds: user.activeSeconds ?? 0,
+    periodStart: user.periodStart ?? 0,
+    telegramId: user.telegramId ?? null,
   }
 }
 

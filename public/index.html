@@ -75,14 +75,14 @@
                 <p id="login-error" class="error-msg"></p>
             </div>
 
-            <!-- v3.0.1 新增功能 -->
+            <!-- v3.0.2 新增功能 -->
             <div class="login-features glass">
-                <h3>✨ v3.0.1 新增功能</h3>
+                <h3>✨ v3.0.2 新增功能</h3>
                 <ul>
-                    <li><b>WebDAV 音乐挂载</b>：远程音乐边播边缓存 + 目录歌单</li>
-                    <li><b>OpenList 音乐整合</b>：网盘目录扫描、收藏与播放</li>
-                    <li><b>Subsonic 客户端</b>：音流 / Feishin 直接播放挂载音乐</li>
-                    <li><b>同目录 .lrc 歌词</b>：UTF-8 / GBK 编码自适应</li>
+                    <li><b>对外开放注册</b>：卡密注册 + 账号有效期（7/30/365 天 / 永久）</li>
+                    <li><b>活跃续期与自动封禁</b>：周期活跃自动续期，无活跃自动封禁</li>
+                    <li><b>Telegram 机器人</b>：注册 / 绑定 / 改密 / 获取线路</li>
+                    <li><b>TG 歌单下载</b>：发送歌单自动对比曲库并下载生成歌单</li>
                 </ul>
             </div>
         </div>
@@ -306,14 +306,14 @@
                         <p id="dashboard-date">欢迎回到 LX Sync Server 管理控制台</p>
                     </div>
 
-                    <!-- v3.0.1 版本公告 -->
+                    <!-- v3.0.2 版本公告 -->
                     <div class="release-note glass">
-                        <div class="release-note-title">🎉 v3.0.1 更新公告</div>
+                        <div class="release-note-title">🎉 v3.0.2 更新公告</div>
                         <ul class="release-note-list">
-                            <li><b>WebDAV 音乐挂载</b>：挂载远程 WebDAV 音乐目录，边播边缓存 + 目录歌单。</li>
-                            <li><b>OpenList 音乐整合</b>：网盘目录扫描、合并列表、内嵌目录树与收藏播放。</li>
-                            <li><b>Subsonic 客户端播放</b>：音流 / Feishin 等客户端可直接播放 WebDAV / OpenList 挂载音乐。</li>
-                            <li><b>挂载歌曲同目录 .lrc 歌词</b>：`getLyricsBySongId` 读取同目录歌词，UTF-8 / GBK 编码自适应。</li>
+                            <li><b>对外开放用户注册</b>：卡密注册，账号按有效期授权（7 / 30 / 365 天 / 永久）。</li>
+                            <li><b>账号生命周期管理</b>：30 天周期活跃自动续期；可配置无活跃自动封禁；后台可设置/续期/封禁。</li>
+                            <li><b>Telegram 机器人</b>：卡密注册、绑定账号、修改密码、获取服务器线路。</li>
+                            <li><b>TG 歌单自动下载</b>：发送文本 / LX JSON / 平台链接歌单，自动对比曲库并下载生成专属歌单。</li>
                         </ul>
                     </div>
 
@@ -1085,6 +1085,41 @@
                                         <option value="wy">仅 WY</option>
                                     </select>
                                     <small class="config-hint">设置歌手详情、头像及简介的获取来源优先级</small>
+                                </div>
+                                <div class="config-divider"></div>
+                                <div class="config-section-title">账号风控与通知</div>
+                                <div class="config-field">
+                                    <label class="config-label">不活跃自动封禁阈值（天）</label>
+                                    <input type="number" min="0" step="1" name="user.autoBanInactiveDays" class="form-input config-input"
+                                        placeholder="0 表示不启用自动封禁" />
+                                    <small class="config-hint">账号超过该天数无活跃记录时自动封禁，0 或留空表示不启用</small>
+                                </div>
+                                <div class="config-field">
+                                    <label class="config-label">服务器对外地址</label>
+                                    <input type="text" name="server.publicUrl" class="form-input config-input"
+                                        placeholder="https://music.example.com" />
+                                    <small class="config-hint">用于 Telegram 通知中的可点击链接，支持 $HOME/server/ 变量</small>
+                                </div>
+                                <div class="config-toggle-row">
+                                    <div class="config-toggle-info">
+                                        <span class="config-toggle-label">Telegram 通知</span>
+                                        <span class="config-toggle-desc">用户注册、到期、封禁时向指定群组推送通知</span>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" name="telegram.enable" />
+                                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                                    </label>
+                                </div>
+                                <div class="config-field">
+                                    <label class="config-label">Telegram Bot Token</label>
+                                    <input type="password" name="telegram.botToken" class="form-input config-input"
+                                        placeholder="123456:ABC-xxxxxxxxxxxx" />
+                                </div>
+                                <div class="config-field">
+                                    <label class="config-label">Telegram 接收群组/用户 ID</label>
+                                    <input type="text" name="telegram.chatId" class="form-input config-input"
+                                        placeholder="-1001234567890" />
+                                    <small class="config-hint">群组 ID 以 -100 开头，私聊为个人用户 ID</small>
                                 </div>
                             </div>
                         </div>

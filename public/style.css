@@ -959,6 +959,16 @@ body {
     margin: 0.15rem 0;
 }
 
+.config-section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    margin: 0.35rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 /* Toggle 开关行 */
 .config-toggle-row {
     display: flex;
@@ -2560,6 +2570,18 @@ select.form-input option:checked {
     background: rgba(16, 185, 129, 0.1);
     color: var(--accent-success);
     border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.status-badge.warning {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.status-badge.danger {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
 .status-badge.active::before {

@@ -21,6 +21,36 @@ declare namespace LX {
      * 添加歌曲到我的列表时的方式
      */
     'list.addMusicLocationType'?: AddMusicLocationType
+
+    /**
+     * 账号到期时间戳，null 表示永久
+     */
+    expireAt?: number | null
+
+    /**
+     * 是否已被封禁
+     */
+    banned?: boolean
+
+    /**
+     * 上次活跃时间戳
+     */
+    lastActiveAt?: number
+
+    /**
+     * 当前续期周期累计活跃秒数
+     */
+    activeSeconds?: number
+
+    /**
+     * 当前续期周期起始时间戳
+     */
+    periodStart?: number
+
+    /**
+     * 绑定的 Telegram 用户 ID
+     */
+    telegramId?: number | null
   }
 
   interface UserConfig extends User {
@@ -103,6 +133,31 @@ declare namespace LX {
      * 是否将 OpenList 目录整合到本地音乐列表
      */
     'user.enableOpenListInLocalMusic'?: boolean
+
+    /**
+     * 无活跃自动封禁阈值（天），0 表示关闭
+     */
+    'user.autoBanInactiveDays'?: number
+
+    /**
+     * 服务器对外访问地址（TG /server 命令返回线路使用）
+     */
+    'server.publicUrl'?: string
+
+    /**
+     * 是否启用 TG 机器人
+     */
+    'telegram.enable'?: boolean
+
+    /**
+     * TG 机器人 Bot Token
+     */
+    'telegram.botToken'?: string
+
+    /**
+     * TG 管理通知接收群组/用户 ID
+     */
+    'telegram.chatId'?: string
 
     /**
      * 公共最大备份快照数

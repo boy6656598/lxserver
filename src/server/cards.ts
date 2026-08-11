@@ -92,9 +92,9 @@ export const deleteCards = (ids: string[]): number => {
 
 /**
  * 校验并占用一张卡密
- * @returns 占用成功返回 true，失败抛出错误
+ * @returns 占用成功返回卡的过期天数信息，失败抛出错误
  */
-export const consumeCard = (code: string, boundUser: string): boolean => {
+export const consumeCard = (code: string, boundUser: string): { expireDays: number | null } => {
   loadCards()
   const normalized = code.trim().toUpperCase()
   const card = cards.find(c => c.code === normalized)
@@ -108,7 +108,7 @@ export const consumeCard = (code: string, boundUser: string): boolean => {
   card.usedAt = Date.now()
   card.boundUser = boundUser
   saveCards()
-  return true
+  return { expireDays: card.expireDays }
 }
 
 export const initCards = (): void => {

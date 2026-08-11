@@ -1,6 +1,6 @@
 {
   "name": "lx-music-sync-server",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "private": true,
   "scripts": {
     "prebuild": "node scripts/download-binary.js && node scripts/update-build-hash.js",
@@ -44,6 +44,7 @@
     "crypto-js": "^4.2.0",
     "file-type": "^22.0.1",
     "formidable": "^3.5.4",
+    "grammy": "^1.45.1",
     "log4js": "^6.9.1",
     "lru-cache": "^10.0.1",
     "message2call": "0.1.3",

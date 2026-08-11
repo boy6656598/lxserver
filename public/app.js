@@ -847,9 +847,32 @@ class App {
                     </button>
                 </div>
                 <div class="col-status">
-                    <span class="status-badge active">活跃</span>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        ${user.banned ? '<span class="status-badge danger">已封禁</span>' : ''}
+                        ${this.renderExpireBadge(user.expireAt)}
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px;">
+                        活跃 ${this.formatDate(user.lastActiveAt)} · 周期 ${Math.round(user.activeSeconds || 0)}s
+                    </div>
                 </div>
                 <div class="col-actions">
+                    <button class="btn-icon" onclick="app.showExpireModal(${index})" title="设置有效期">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" onclick="app.renewUser(${index})" title="续期30天">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" onclick="app.toggleBanUser(${index})" title="${user.banned ? '解封' : '封禁'}">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </button>
                     <button class="btn-delete" onclick="app.deleteUser(${index})" title="删除用户">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -863,6 +886,87 @@ class App {
         const selectAll = document.getElementById('select-all-users');
         if (selectAll) selectAll.checked = false;
         this.updateUserBatchBtn();
+    }
+
+    renderExpireBadge(expireAt) {
+        if (expireAt === null || expireAt === undefined) return '<span class="status-badge active">永久</span>';
+        const now = Date.now();
+        if (expireAt < now) return '<span class="status-badge danger">已到期</span>';
+        const days = Math.ceil((expireAt - now) / 86400000);
+        const cls = days <= 7 ? 'warning' : 'active';
+        return `<span class="status-badge ${cls}">剩 ${days} 天</span>`;
+    }
+
+    formatDate(ts) {
+        if (!ts) return '从未';
+        const d = new Date(ts);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    showExpireModal(index) {
+        const user = this.users[index];
+        if (!user) return;
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+
+        modalTitle.textContent = `设置 ${user.name} 的有效期`;
+        modalBody.innerHTML = `
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">选择可使用时长为该用户更新到期时间（覆盖原有效期）：</p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button class="btn-primary" onclick="app.setUserExpire('${user.name}', 7)">7 天</button>
+                <button class="btn-primary" onclick="app.setUserExpire('${user.name}', 30)">30 天</button>
+                <button class="btn-primary" onclick="app.setUserExpire('${user.name}', 365)">365 天</button>
+                <button class="btn-primary" onclick="app.setUserExpire('${user.name}', 0)">永久</button>
+                <button class="btn-secondary" onclick="app.closeModal()">取消</button>
+            </div>
+        `;
+        modal.classList.remove('hidden');
+    }
+
+    async setUserExpire(name, days) {
+        try {
+            await this.request('/api/users/expire', {
+                method: 'POST',
+                body: JSON.stringify({ name, days })
+            });
+            this.closeModal();
+            this.loadUsers();
+            showSuccess('有效期已更新');
+        } catch (err) {
+            showError('设置有效期失败: ' + err.message);
+        }
+    }
+
+    async renewUser(index) {
+        const user = this.users[index];
+        if (!user) return;
+        try {
+            await this.request('/api/users/renew', {
+                method: 'POST',
+                body: JSON.stringify({ name: user.name, days: 30 })
+            });
+            this.loadUsers();
+            showSuccess('已为该用户续期 30 天');
+        } catch (err) {
+            showError('续期失败: ' + err.message);
+        }
+    }
+
+    async toggleBanUser(index) {
+        const user = this.users[index];
+        if (!user) return;
+        try {
+            await this.request('/api/users/ban', {
+                method: 'POST',
+                body: JSON.stringify({ name: user.name, banned: !user.banned })
+            });
+            this.loadUsers();
+            showSuccess(user.banned ? '已解封' : '已封禁');
+        } catch (err) {
+            showError('操作失败: ' + err.message);
+        }
     }
 
     filterUsers() {
@@ -1819,6 +1923,23 @@ class App {
             if (form.elements['subsonic.lyricTranslation']) {
                 form.elements['subsonic.lyricTranslation'].checked = config['subsonic.lyricTranslation'] !== false;
             }
+
+            // 账号风控与通知配置
+            if (form.elements['user.autoBanInactiveDays']) {
+                form.elements['user.autoBanInactiveDays'].value = config['user.autoBanInactiveDays'] || 0;
+            }
+            if (form.elements['server.publicUrl']) {
+                form.elements['server.publicUrl'].value = config['server.publicUrl'] || '';
+            }
+            if (form.elements['telegram.enable']) {
+                form.elements['telegram.enable'].checked = config['telegram.enable'] === true;
+            }
+            if (form.elements['telegram.botToken']) {
+                form.elements['telegram.botToken'].value = config['telegram.botToken'] || '';
+            }
+            if (form.elements['telegram.chatId']) {
+                form.elements['telegram.chatId'].value = config['telegram.chatId'] || '';
+            }
         } catch (err) {
             console.error('Failed to load config:', err);
         }
@@ -1908,6 +2029,11 @@ class App {
             'subsonic.lyricTranslation': formData.get('subsonic.lyricTranslation') === 'on',
             'singer.sourcePriority': formData.get('singer.sourcePriority'),
             'system.allowUnsafeVM': formData.get('system.allowUnsafeVM') === 'on',
+            'user.autoBanInactiveDays': parseInt(formData.get('user.autoBanInactiveDays')) || 0,
+            'server.publicUrl': (formData.get('server.publicUrl') || '').trim(),
+            'telegram.enable': formData.get('telegram.enable') === 'on',
+            'telegram.botToken': (formData.get('telegram.botToken') || '').trim(),
+            'telegram.chatId': (formData.get('telegram.chatId') || '').trim(),
         };
 
         try {

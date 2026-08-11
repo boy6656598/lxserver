@@ -15,6 +15,15 @@ const config: LX.Config = {
   'user.enableCacheSizeLimit': false, // 是否启用缓存空间限制
   'user.cacheSizeLimit': 2000, // 缓存空间限制大小 (MB)
   'user.enableOpenListInLocalMusic': true, // 是否将 OpenList 目录整合到本地音乐列表
+  'user.autoBanInactiveDays': 0, // 无活跃自动封禁阈值（天），0 表示关闭
+
+  // 服务器对外地址（TG /server 命令返回线路使用）
+  'server.publicUrl': '',
+
+  // TG 机器人配置
+  'telegram.enable': false,
+  'telegram.botToken': '',
+  'telegram.chatId': '',
 
   maxSnapshotNum: 10, // 公共最大备份快照数
   'list.addMusicLocationType': 'top', // 公共添加歌曲到我的列表时的位置 top | bottom，参考客户端的「设置 → 列表设置 → 添加歌曲到列表时的位置」

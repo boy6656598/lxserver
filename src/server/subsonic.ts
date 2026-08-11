@@ -5,6 +5,7 @@ import { getUserSpace, getUserDirname } from '@/user'
 import { callUserApiGetMusicUrl } from '@/server/userApi'
 import * as webdavMount from '@/server/webdavMount'
 import * as openlist from '@/server/openlist'
+import * as account from '@/server/userAccount'
 import { getSingerPic, getSingerDetail, getSingerMid } from '@/server/utils/singer'
 import { fetchRecommendedAlbums } from '@/server/utils/recommendAlbums'
 import { fetchGenres, fetchRadios, fetchPlaylistsByGenre, fetchRadioSongs, fetchPlaylistSongs, fetchSongsByGenre } from '@/server/utils/discovery'
@@ -56,22 +57,34 @@ class SubsonicHandler {
         // Token & Salt 方式 (推荐)
         const t = params.get('t')
         const s = params.get('s')
+        let authenticated = false
         if (t && s) {
             const hash = crypto.createHash('md5').update(user.password + s).digest('hex')
-            if (hash === t.toLowerCase()) return u
+            if (hash === t.toLowerCase()) authenticated = true
         }
 
         // 明文密码方式 (包含 enc: 前缀处理)
-        const p = params.get('p')
-        if (p) {
-            let password = p
-            if (p.startsWith('enc:')) {
-                password = Buffer.from(p.substring(4), 'hex').toString()
+        if (!authenticated) {
+            const p = params.get('p')
+            if (p) {
+                let password = p
+                if (p.startsWith('enc:')) {
+                    password = Buffer.from(p.substring(4), 'hex').toString()
+                }
+                if (password === user.password) authenticated = true
             }
-            if (password === user.password) return u
         }
 
-        return null
+        if (!authenticated) return null
+
+        // 到期/封禁校验：被封禁或过期用户禁止 Subsonic 播放
+        const access = account.checkUserAccess(u)
+        if (!access.ok) {
+            console.warn(`[Subsonic] Auth blocked for ${u}: ${access.reason}`)
+            return null
+        }
+        account.recordActivity(u)
+        return u
     }
 
     // ─────────────────────────────────────────────

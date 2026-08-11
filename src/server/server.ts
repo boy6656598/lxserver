@@ -31,6 +31,8 @@ const { MusicTagger, MetaPicture } = require('music-tag-native')
 import * as cards from './cards'
 import * as openlist from './openlist'
 import * as webdavMount from './webdavMount'
+import * as account from './userAccount'
+import * as telegramBot from './telegramBot'
 
 // ===== Player Session Store =====
 const playerSessions = new Map<string, { createdAt: number }>()
@@ -207,6 +209,7 @@ export const verifyUserAuth = (req: IncomingMessage): string | null => {
     // 1. Session Token 验证
     const session = userSessions.get(token)
     if (session && Date.now() - session.createdAt <= USER_SESSION_TTL) {
+      account.recordActivity(session.username)
       return session.username
     }
 
@@ -231,6 +234,7 @@ export const verifyUserAuth = (req: IncomingMessage): string | null => {
           const masked = `${meta.token.slice(0, 6)}...${meta.token.slice(-4)}`
           tokenLog.info(`API Token [${meta.name}] (${masked}) used by ${persistentUsername} from ${ip} to access ${req.url}`)
 
+          account.recordActivity(persistentUsername)
           return persistentUsername
         } else {
           // 已过期，从内存缓存移除
@@ -497,19 +501,7 @@ function onSocketError(err: Error) {
 }
 
 const saveUsers = () => {
-  const usersJsonPath = path.join(global.lx.dataPath, 'users.json')
-  try {
-    fs.writeFileSync(usersJsonPath, JSON.stringify(global.lx.config.users.map(u => ({
-      name: u.name,
-      password: u.password,
-      maxSnapshotNum: u.maxSnapshotNum,
-      'list.addMusicLocationType': u['list.addMusicLocationType'],
-    })), null, 2))
-    return true
-  } catch (err) {
-    console.error('Failed to save users.json', err)
-    return false
-  }
+  return account.saveUsersFile()
 }
 
 /** [新增] 服务器内部热重载数据 */
@@ -1215,10 +1207,19 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
           return
         }
         if (req.method === 'GET') {
-          // 修改：返回包含密码的用户列表
-          const users = global.lx.config.users.map(u => ({ name: u.name, password: u.password }))
+          // 修改：返回包含账号生命周期字段的用户列表
+          const users = account.listAccounts().map(u => ({
+            name: u.name,
+            password: u.password,
+            expireAt: u.expireAt,
+            banned: u.banned,
+            lastActiveAt: u.lastActiveAt,
+            activeSeconds: Math.round(u.activeSeconds),
+            periodStart: u.periodStart,
+            telegramId: u.telegramId,
+          }))
           if (global.lx.config['user.enablePublicFavorites']) {
-            users.unshift({ name: '_open', password: '' })
+            users.unshift({ name: '_open', password: '', expireAt: null, banned: false, lastActiveAt: 0, activeSeconds: 0, periodStart: 0, telegramId: null })
           }
           res.writeHead(200, {
             'Content-Type': 'application/json',
@@ -1251,6 +1252,12 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
                 name,
                 password,
                 dataPath,
+                expireAt: null,
+                banned: false,
+                lastActiveAt: Date.now(),
+                activeSeconds: 0,
+                periodStart: Date.now(),
+                telegramId: null,
               })
               saveUsers()
 
@@ -1266,8 +1273,9 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
         if (req.method === 'PUT') {
           void readBody(req).then(body => {
             try {
-              const { name, newName, password } = JSON.parse(body)
-              if (!name || (!password && !newName)) {
+              const bodyObj = JSON.parse(body)
+              const { name, newName, password } = bodyObj
+              if (!name || (!password && !newName && bodyObj.expireAt === undefined)) {
                 res.writeHead(400)
                 res.end('Missing required fields')
                 return
@@ -1283,6 +1291,9 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
 
               const handleFinalUpdate = () => {
                 if (password) user.password = password
+                if (bodyObj.expireAt !== undefined) {
+                  user.expireAt = bodyObj.expireAt === null ? null : Number(bodyObj.expireAt)
+                }
                 saveUsers()
                 res.writeHead(200)
                 res.end(JSON.stringify({ success: true }))
@@ -1415,6 +1426,103 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
           })
           return
         }
+      }
+
+      // ================= 用户账号生命周期管理（管理员） =================
+      const requireAdminAuth = () => (req.headers['x-frontend-auth'] as string) === global.lx.config['frontend.password']
+
+      // 设置账号有效期（days>0 表示 now+days 天；days<=0 或 permanent 表示永久）
+      if (pathname === '/api/users/expire' && req.method === 'POST') {
+        if (!requireAdminAuth()) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }))
+          return
+        }
+        void readBody(req).then(body => {
+          try {
+            const { name, days } = JSON.parse(body)
+            if (!name || typeof days !== 'number') {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ success: false, message: '缺少 name 或 days' }))
+              return
+            }
+            const expireAt = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : null
+            const result = account.setExpire(String(name), expireAt)
+            if (!result.success) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify(result))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ success: true, expireAt }))
+          } catch (e: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ success: false, message: e.message || 'Bad Request' }))
+          }
+        })
+        return
+      }
+
+      // 手动续期（默认延长 30 天）
+      if (pathname === '/api/users/renew' && req.method === 'POST') {
+        if (!requireAdminAuth()) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }))
+          return
+        }
+        void readBody(req).then(body => {
+          try {
+            const { name, days } = JSON.parse(body)
+            if (!name) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ success: false, message: '缺少 name' }))
+              return
+            }
+            const result = account.renewExpire(String(name), days ? parseInt(days, 10) : 30)
+            if (!result.success) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify(result))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ success: true }))
+          } catch (e: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ success: false, message: e.message || 'Bad Request' }))
+          }
+        })
+        return
+      }
+
+      // 封禁 / 解封
+      if (pathname === '/api/users/ban' && req.method === 'POST') {
+        if (!requireAdminAuth()) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, message: 'Unauthorized' }))
+          return
+        }
+        void readBody(req).then(body => {
+          try {
+            const { name, banned } = JSON.parse(body)
+            if (!name) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ success: false, message: '缺少 name' }))
+              return
+            }
+            const result = account.setBanned(String(name), !!banned)
+            if (!result.success) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify(result))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ success: true }))
+          } catch (e: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ success: false, message: e.message || 'Bad Request' }))
+          }
+        })
+        return
       }
 
       if (pathname === '/api/data' && req.method === 'GET') {
@@ -1857,20 +1965,17 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
             }
             const user = global.lx.config.users.find((u: any) => u.name === username && u.password === password)
             if (user) {
-              const token = generateSessionId()
-              userSessions.set(token, { username, createdAt: Date.now() })
-              loginLog.info(`User token issued: ${username} from ${ip}`)
-            const loginHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-            if (global.lx.config['player.forceLogin']) {
-              const sessionId = generateSessionId()
-              playerSessions.set(sessionId, { createdAt: Date.now() })
-              const cookies: string[] = []
-              cookies.push(`${SESSION_COOKIE_NAME}=${sessionId}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${SESSION_TTL / 1000}`)
-              cookies.push(`${USER_TOKEN_COOKIE_NAME}=${token}; Path=/; SameSite=Lax; Max-Age=${USER_SESSION_TTL / 1000}`)
-              loginHeaders['Set-Cookie'] = cookies.join(', ')
-            }
-              res.writeHead(200, loginHeaders)
-              res.end(JSON.stringify({ success: true, token, username }))
+              const access = account.checkUserAccess(username)
+              if (!access.ok) {
+                loginLog.warn(`User login blocked: ${username} (${access.reason}) from ${ip}`)
+                res.writeHead(403, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ success: false, message: access.reason }))
+                return
+              }
+              loginLog.warn(`User login blocked (web player not allowed): ${username} from ${ip}`)
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ success: false, message: '该账号不允许登录 Web 播放端，仅管理员可通过访问密码进入' }))
+              return
             } else {
               loginLog.warn(`User login failed: ${username} from ${ip}`)
               res.writeHead(401, { 'Content-Type': 'application/json' })
@@ -4277,9 +4382,12 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
         void readBody(req).then(body => {
           try {
             const { password } = JSON.parse(body)
-            const correctPassword = global.lx.config['player.password'] || ''
+            const adminPassword = global.lx.config['frontend.password'] || ''
+            const playerPassword = global.lx.config['player.password'] || ''
+            // 播放端仅管理员可通过后台密码（兼容旧版 player.password）进入
+            const ok = (adminPassword && password === adminPassword) || (playerPassword && password === playerPassword)
 
-            if (password === correctPassword) {
+            if (ok) {
               const sessionId = generateSessionId()
               playerSessions.set(sessionId, { createdAt: Date.now() })
               loginLog.info(`Player login success from ${ip}`)
@@ -4327,50 +4435,15 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
         void readBody(req).then(async body => {
           try {
             const { username, password, cardCode } = JSON.parse(body)
-            if (!username || !password || !cardCode) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ success: false, message: '缺少用户名、密码或卡密' }))
+            const result = account.registerUserAccount(username, password, cardCode)
+            if (!result.success) {
+              res.writeHead(result.code || 400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ success: false, message: result.message }))
               return
             }
-            if (typeof username !== 'string' || !/^[a-zA-Z0-9_\-]{2,32}$/.test(username)) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ success: false, message: '用户名仅支持字母/数字/下划线/短横线，长度2-32' }))
-              return
-            }
-            if (typeof password !== 'string' || password.length < 6) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ success: false, message: '密码长度至少6位' }))
-              return
-            }
-            if (global.lx.config.users.some(u => u.name === username)) {
-              res.writeHead(409, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ success: false, message: '用户名已存在' }))
-              return
-            }
-            if (global.lx.config['player.enableRegister'] === false) {
-              res.writeHead(403, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ success: false, message: '注册功能已关闭' }))
-              return
-            }
-            try {
-              cards.consumeCard(cardCode, username)
-            } catch (err: any) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ success: false, message: err.message }))
-              return
-            }
-
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { getUserDirname } = require('@/user')
-            const dataPath = path.join(global.lx.userPath, getUserDirname(username))
-            checkAndCreateDir(dataPath)
-
-            global.lx.config.users.push({ name: username, password, dataPath })
-            saveUsers()
-
             const token = generateSessionId()
-            userSessions.set(token, { username, createdAt: Date.now() })
-            loginLog.info(`New user registered: ${username} from ${ip}`)
+            userSessions.set(token, { username: result.username!, createdAt: Date.now() })
+            loginLog.info(`New user registered: ${result.username} from ${ip}`)
             const regHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
             if (global.lx.config['player.forceLogin']) {
               const sessionId = generateSessionId()
@@ -4381,7 +4454,7 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
               regHeaders['Set-Cookie'] = cookies.join(', ')
             }
             res.writeHead(200, regHeaders)
-            res.end(JSON.stringify({ success: true, token, username }))
+            res.end(JSON.stringify({ success: true, token, username: result.username }))
           } catch (e: any) {
             res.writeHead(400, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ success: false, message: e.message || 'Bad Request' }))
@@ -4391,7 +4464,6 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
       }
 
       // ================= 卡密管理（管理员） =================
-      const requireAdminAuth = () => (req.headers['x-frontend-auth'] as string) === global.lx.config['frontend.password']
 
       if (pathname === '/api/card/list' && req.method === 'GET') {
         if (!requireAdminAuth()) {
@@ -6507,6 +6579,11 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
             'singer.sourcePriority': (global.lx.config['singer.sourcePriority'] || ['tx', 'wy']).join(','),
             'artist.maxFetchPages': global.lx.config['artist.maxFetchPages'] ?? 20,
             'system.allowUnsafeVM': global.lx.config['system.allowUnsafeVM'] || false,
+            'user.autoBanInactiveDays': global.lx.config['user.autoBanInactiveDays'] ?? 0,
+            'server.publicUrl': global.lx.config['server.publicUrl'] || '',
+            'telegram.enable': global.lx.config['telegram.enable'] ?? false,
+            'telegram.botToken': global.lx.config['telegram.botToken'] || '',
+            'telegram.chatId': global.lx.config['telegram.chatId'] || '',
           }
           res.writeHead(200, {
             'Content-Type': 'application/json',
@@ -6535,6 +6612,11 @@ const handleStartServer = async (port = 9527, ip = '127.0.0.1') => await new Pro
               if (newConfig['user.enableLoginCacheRestriction'] !== undefined) global.lx.config['user.enableLoginCacheRestriction'] = newConfig['user.enableLoginCacheRestriction']
               if (newConfig['user.enableCacheSizeLimit'] !== undefined) global.lx.config['user.enableCacheSizeLimit'] = newConfig['user.enableCacheSizeLimit']
               if (newConfig['user.cacheSizeLimit'] !== undefined) global.lx.config['user.cacheSizeLimit'] = parseInt(newConfig['user.cacheSizeLimit']) || 2000
+              if (newConfig['user.autoBanInactiveDays'] !== undefined) global.lx.config['user.autoBanInactiveDays'] = Math.max(0, parseInt(newConfig['user.autoBanInactiveDays'])) || 0
+              if (newConfig['server.publicUrl'] !== undefined) global.lx.config['server.publicUrl'] = String(newConfig['server.publicUrl'] || '')
+              if (newConfig['telegram.enable'] !== undefined) global.lx.config['telegram.enable'] = !!newConfig['telegram.enable']
+              if (newConfig['telegram.botToken'] !== undefined) global.lx.config['telegram.botToken'] = String(newConfig['telegram.botToken'] || '')
+              if (newConfig['telegram.chatId'] !== undefined) global.lx.config['telegram.chatId'] = String(newConfig['telegram.chatId'] || '')
               if (newConfig['system.allowUnsafeVM'] !== undefined) global.lx.config['system.allowUnsafeVM'] = newConfig['system.allowUnsafeVM']
 
               let warning = ''
@@ -7605,7 +7687,8 @@ export const startServer = async (port: number, ip: string) => {
   try {
     cards.initCards()
     openlist.loadConfig()
-    console.log('[Server] Cards & OpenList modules initialized')
+    account.initAccountManager()
+    console.log('[Server] Cards & OpenList & Account modules initialized')
   } catch (err: any) {
     console.error('[Server] Failed to init cards/openlist:', err.message)
   }
@@ -7729,6 +7812,9 @@ export const startServer = async (port: number, ip: string) => {
     status.status = true
     status.message = ''
     status.address = ip == '0.0.0.0' ? getAddress() : [ip]
+
+    // 启动 Telegram 机器人（长轮询）
+    telegramBot.initTelegramBot()
 
     // void generateCode()
     // codeTools.start()

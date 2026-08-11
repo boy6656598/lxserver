@@ -359,6 +359,12 @@ if (fs.existsSync(usersJsonPath)) {
       password: u.password,
       maxSnapshotNum: u.maxSnapshotNum,
       'list.addMusicLocationType': u['list.addMusicLocationType'],
+      expireAt: u.expireAt ?? null,
+      banned: !!u.banned,
+      lastActiveAt: u.lastActiveAt ?? 0,
+      activeSeconds: u.activeSeconds ?? 0,
+      periodStart: u.periodStart ?? 0,
+      telegramId: u.telegramId ?? null,
     })), null, 2))
   } catch (err) {
     console.error('Failed to save users.json', err)
