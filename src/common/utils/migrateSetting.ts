@@ -140,6 +140,10 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting.version = '2.1.0'
   }
 
+  // 迁移 v3.0.1 之前的设置数据
+  if (compareVer(setting.version, '3.0.1') < 0) {
+    setting.version = '3.0.1'
+  }
 
   return setting
 }

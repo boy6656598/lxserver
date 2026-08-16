@@ -1,4 +1,4 @@
-# LX Music Sync Server (Enhanced Edition)
+# LX Music Sync Server V3.0.1 (Enhanced Edition)
 
 ![lxserver](https://socialify.git.ci/boy6656598/lxserver/image?description=1&forks=0&issues=0&logo=https://raw.githubusercontent.com/boy6656598/lxserver/refs/heads/main/public/icon.svg&owner=1&pulls=0&stargazers=0&theme=Auto)
 

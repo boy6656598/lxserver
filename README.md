@@ -1,17 +1,17 @@
-# LX Music Sync Server (Enhanced Edition)
+# LX Music Sync Server V3.0.1 (Enhanced Edition)
 
 ![lxserver](https://socialify.git.ci/boy6656598/lxserver/image?description=1&forks=0&issues=0&logo=https://raw.githubusercontent.com/boy6656598/lxserver/refs/heads/main/public/icon.svg&owner=1&pulls=0&stargazers=0&theme=Auto)
 
 <div align="center">
   <p>
     <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build Status">
-    <img src="https://img.shields.io/badge/version-v2.1.0-blue?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-v3.0.1-blue?style=flat-square" alt="Version">
     <img src="https://img.shields.io/badge/node-%3E%3D16-green?style=flat-square" alt="Node Version">
     <img src="https://img.shields.io/github/license/boy6656598/lxserver?style=flat-square" alt="License">
     <br>
     <br>
     <a href="https://github.com/boy6656598/lxserver/stargazers"><img src="https://img.shields.io/github/stars/boy6656598/lxserver?style=flat-square&color=ffe16b" alt="GitHub stars"></a>
-    <a href="https://github.com/boy6656598/lxserver/network/members"><img src="https://img.shields.io/github/forks/boy6656598/lxserver?style=flat-square" alt="GitHub forks"></a>
+    <a href="https://github.com/boy6656598/lxserver/network/members"><img src="https://img.shields.io/github/forks/boy6656598/lxserver?style=flat-square&color=ffe16b" alt="GitHub forks"></a>
     <a href="https://github.com/boy6656598/lxserver/issues"><img src="https://img.shields.io/github/issues/boy6656598/lxserver?style=flat-square&color=red" alt="GitHub issues"></a>
     <a href="https://github.com/boy6656598/lxserver/commits/main"><img src="https://img.shields.io/github/last-commit/boy6656598/lxserver?style=flat-square&color=blueviolet" alt="Last Commit"></a>
     <img src="https://img.shields.io/github/commit-activity/m/boy6656598/lxserver?style=flat-square&color=ff69b4" alt="Commit Activity">
@@ -23,7 +23,15 @@
 
 ---
 
-本项目内置了一个功能强大的 **Web 播放器**，让你可以随时随地在浏览器中享受音乐。同时，它也是一个增强版的 [LX Music 数据同步服务端](md/lxserver.md)，支持 **Subsonic 协议**（音流、Feishin 等客户端可连接播放）、**OpenList / Alist 本地音乐库**，并可通过 Docker / 桌面客户端 / Release 等多种方式一键部署。
+## 🚀 V3.0.1 一键安装版
+
+本版本（V3.0.1）面向**普通用户**做了安装流程简化：无需手动配置环境、无需了解 Node.js，一条命令即可完成自动安装、构建与启动，开箱即用。
+
+- **一键安装（Linux / macOS）**：`bash install.sh`
+- **Windows**：下载 Release 压缩包，双击 `安装.bat` 即可
+- 安装完成后自动运行，浏览器打开 `http://localhost:9527` 即可使用
+
+本项目内置了一个功能强大的 **Web 播放器**，让你可以随时随地在浏览器中享受音乐。同时，它也是一个增强版的 [LX Music 数据同步服务端](md/lxserver.md)，支持 **Subsonic 协议**（音流、Feishin 等客户端可连接播放）、**OpenList / Alist 本地音乐库**，并可通过一键安装脚本 / Docker / 桌面客户端 / Release 等多种方式部署。
 
 ## ✨ Web 播放器核心特性
 
@@ -153,7 +161,25 @@ Web 播放器针对移动端进行了深度优化，手机浏览器访问也能�
 
 ## 🚀 快速启动
 
-本项目基于 **Node.js** 开发，支持多种部署方式。推荐在 NAS / VPS 上使用 **Docker Compose** 一键部署。
+本项目基于 **Node.js** 开发，V3.0.1 提供了面向普通用户的一键安装方式，无需手动配置环境。
+
+### 方式零：一键安装（推荐，无需任何配置）
+
+**Linux / macOS** 用户在终端执行以下命令即可自动完成：环境检测 → Node.js 自动安装 → 依赖安装 → 编译 → 启动：
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/boy6656598/lxserver/main/install.sh)
+```
+
+或者克隆后本地执行：
+
+```bash
+git clone https://github.com/boy6656598/lxserver.git && cd lxserver && bash install.sh
+```
+
+安装完成后浏览器打开 `http://localhost:9527` 即可使用（后台默认密码：`123456`）。
+
+> 脚本会自动安装缺失的 Node.js 16+ 与 git，全程无需手工配置。安装目录默认为 `~/lxserver`，日志位于 `server.log`。
 
 ### 方式一：NAS / Docker Compose 一键部署（推荐）
 
